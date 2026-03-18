@@ -14,6 +14,23 @@ A self-hosted, browser-based file transfer tool. Send files directly between bro
 
 ## Quick Start (Docker)
 
+```yaml
+services:
+  chuck:
+    image: ghcr.io/sloccy/chuck:latest
+    ports:
+      - "8080:8080"
+    volumes:
+      - chuck_data:/data
+    environment:
+      ADMIN_EMAIL: admin@localhost
+      ADMIN_PASSWORD: changeme
+      DATA_DIR: /data
+
+volumes:
+  chuck_data:
+```
+
 ```bash
 docker compose up -d
 ```
