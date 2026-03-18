@@ -217,6 +217,7 @@
   }
 
   function finalizeDownload() {
+    if (chunks.length === 0) return;
     clearInterval(speedInterval);
     const blob = new Blob(chunks, { type: fileMime });
     const url = URL.createObjectURL(blob);

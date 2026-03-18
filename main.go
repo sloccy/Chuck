@@ -79,9 +79,9 @@ var (
 )
 
 var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool { return true },
-	ReadBufferSize:  1024 * 1024,
-	WriteBufferSize: 1024 * 1024,
+	CheckOrigin:     func(r *http.Request) bool { return true },
+	ReadBufferSize:  4 * 1024 * 1024,
+	WriteBufferSize: 4 * 1024 * 1024,
 }
 
 // ── User storage ─────────────────────────────────────────────────────────────
@@ -269,7 +269,8 @@ func handleLoginGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html")
-	w.Write(tmpl)
+	out := strings.ReplaceAll(string(tmpl), "{{.Error}}", "")
+	w.Write([]byte(out))
 }
 
 func handleLoginPost(w http.ResponseWriter, r *http.Request) {
@@ -371,7 +372,8 @@ func handleAdminLoginGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html")
-	w.Write(tmpl)
+	out := strings.ReplaceAll(string(tmpl), "{{.Error}}", "")
+	w.Write([]byte(out))
 }
 
 func handleAdminLoginPost(w http.ResponseWriter, r *http.Request) {
@@ -532,38 +534,60 @@ func handleSenderWS(w http.ResponseWriter, r *http.Request) {
 		deleteRoom(token)
 	}()
 
+	// Relay message represents a chunk to forward to the receiver.
+	type relayMsg struct {
+		binary bool
+		data   []byte
+	}
+
+	relayCh := make(chan relayMsg, 32)
+	writerDone := make(chan struct{})
+
+	// Writer goroutine: drains relayCh and writes to receiver.
+	go func() {
+		defer close(writerDone)
+		for rm := range relayCh {
+			room.ReceiverMu.Lock()
+			rc := room.ReceiverConn
+			if rc == nil {
+				room.ReceiverMu.Unlock()
+				continue
+			}
+			if rm.binary {
+				writer, err := rc.NextWriter(websocket.BinaryMessage)
+				if err != nil {
+					room.ReceiverMu.Unlock()
+					return
+				}
+				writer.Write(rm.data)
+				writer.Close()
+			} else {
+				rc.WriteMessage(websocket.TextMessage, rm.data)
+			}
+			room.ReceiverMu.Unlock()
+		}
+	}()
+
+	defer func() {
+		close(relayCh)
+		<-writerDone
+	}()
+
 	for {
 		msgType, reader, err := conn.NextReader()
 		if err != nil {
 			break
 		}
 
+		data, err := io.ReadAll(reader)
+		if err != nil {
+			break
+		}
+
 		if msgType == websocket.BinaryMessage {
-			room.ReceiverMu.Lock()
-			rc := room.ReceiverConn
-			room.ReceiverMu.Unlock()
-
-			if rc != nil {
-				room.ReceiverMu.Lock()
-				writer, err := rc.NextWriter(websocket.BinaryMessage)
-				if err != nil {
-					room.ReceiverMu.Unlock()
-					break
-				}
-				io.Copy(writer, reader)
-				writer.Close()
-				room.ReceiverMu.Unlock()
-			} else {
-				// Drain the reader
-				io.Copy(io.Discard, reader)
-			}
+			relayCh <- relayMsg{binary: true, data: data}
 		} else {
-			// JSON control message
-			data, err := io.ReadAll(reader)
-			if err != nil {
-				break
-			}
-
+			// JSON control message — process locally and forward
 			var msg map[string]any
 			if err := json.Unmarshal(data, &msg); err != nil {
 				continue
@@ -574,26 +598,13 @@ func handleSenderWS(w http.ResponseWriter, r *http.Request) {
 			case "ready":
 				room.Status = StatusActive
 				activeTransfers.Add(1)
-				// Forward to receiver
-				room.ReceiverMu.Lock()
-				if room.ReceiverConn != nil {
-					room.ReceiverConn.WriteJSON(msg)
-				}
-				room.ReceiverMu.Unlock()
-			case "metadata":
-				// Forward file metadata to receiver
-				room.ReceiverMu.Lock()
-				if room.ReceiverConn != nil {
-					room.ReceiverConn.WriteJSON(msg)
-				}
-				room.ReceiverMu.Unlock()
-			case "complete":
-				room.ReceiverMu.Lock()
-				if room.ReceiverConn != nil {
-					room.ReceiverConn.WriteJSON(msg)
-				}
-				room.ReceiverMu.Unlock()
+			case "metadata", "complete":
+				// no local state change needed
+			default:
+				continue
 			}
+
+			relayCh <- relayMsg{binary: false, data: data}
 		}
 	}
 }

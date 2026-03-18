@@ -206,7 +206,7 @@
 <script src="/static/jszip.min.js"></script>
 <script>
 (function() {
-  const CHUNK_SIZE = 4 * 1024 * 1024;
+  const CHUNK_SIZE = 16 * 1024 * 1024;
 
   let selectedFiles = [];
   let ws = null;
@@ -403,6 +403,7 @@
     ws.send(JSON.stringify({ type: 'complete' }));
     stopSpeedInterval();
     setStatus('Complete');
+    progressBar.classList.remove('progress-indeterminate');
     progressBar.style.width = '100%';
     completeMsg.style.display = 'block';
     transferActive = false;
@@ -414,8 +415,8 @@
       const slice = file.slice(offset, offset + CHUNK_SIZE);
       const buf = await slice.arrayBuffer();
       // Wait for buffer to drain before sending next chunk
-      while (ws.bufferedAmount > 8 * 1024 * 1024) {
-        await sleep(50);
+      while (ws.bufferedAmount > 512 * 1024 * 1024) {
+        await sleep(10);
       }
       ws.send(buf);
       offset += buf.byteLength;
