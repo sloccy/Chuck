@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chuck — Dashboard</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0d0d0d;
+    color: #e8e8e8;
+    font-family: 'Courier New', Courier, monospace;
+    min-height: 100vh;
+    padding: 2rem;
+  }
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2.5rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid #2a2a2a;
+  }
+  h1 { font-size: 1.2rem; letter-spacing: 0.2em; }
+  nav a { color: #666; text-decoration: none; font-size: 0.8rem; margin-left: 1.5rem; }
+  nav a:hover { color: #e8e8e8; }
+  .container { max-width: 640px; margin: 0 auto; }
+  .section { margin-bottom: 2rem; }
+  .label { font-size: 0.72rem; color: #666; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.8rem; }
+
+  /* Drop zone */
+  #drop-zone {
+    border: 2px dashed #2a2a2a;
+    padding: 3rem 2rem;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+    margin-bottom: 1rem;
+  }
+  #drop-zone.drag-over { border-color: #e8e8e8; background: #161616; }
+  #drop-zone.has-files { border-color: #444; border-style: solid; }
+  .drop-icon { font-size: 2rem; margin-bottom: 0.5rem; color: #444; }
+  .drop-text { color: #666; font-size: 0.85rem; }
+  .drop-text strong { color: #e8e8e8; }
+
+  .pick-btns { display: flex; gap: 0.8rem; margin-bottom: 1rem; }
+  .btn {
+    flex: 1;
+    background: #1a1a1a;
+    border: 1px solid #333;
+    color: #e8e8e8;
+    padding: 0.55rem 1rem;
+    font-family: inherit;
+    font-size: 0.8rem;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    transition: background 0.1s;
+  }
+  .btn:hover { background: #222; }
+  .btn-primary {
+    background: #e8e8e8;
+    color: #0d0d0d;
+    border-color: #e8e8e8;
+  }
+  .btn-primary:hover { background: #fff; }
+  .btn-primary:disabled { background: #444; border-color: #444; color: #888; cursor: not-allowed; }
+
+  /* File list */
+  #file-list { margin-bottom: 1rem; }
+  .file-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.4rem 0;
+    border-bottom: 1px solid #1a1a1a;
+    font-size: 0.82rem;
+  }
+  .file-name { color: #ccc; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 400px; }
+  .file-size { color: #555; flex-shrink: 0; margin-left: 1rem; }
+
+  /* Link section */
+  #link-section { display: none; margin-bottom: 1.5rem; }
+  .link-box {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    background: #141414;
+    border: 1px solid #2a2a2a;
+    padding: 0.6rem 0.8rem;
+  }
+  #transfer-url {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: #e8e8e8;
+    font-family: inherit;
+    font-size: 0.82rem;
+    outline: none;
+    cursor: text;
+  }
+  #copy-btn {
+    background: transparent;
+    border: none;
+    color: #666;
+    font-family: inherit;
+    font-size: 0.75rem;
+    cursor: pointer;
+    padding: 0 0.3rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  #copy-btn:hover { color: #e8e8e8; }
+  #copy-btn.copied { color: #55ff55; }
+
+  /* Status */
+  #status-area { display: none; }
+  .status-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.8rem;
+    color: #888;
+    margin-bottom: 0.4rem;
+  }
+  #status-text { color: #e8e8e8; }
+  #speed-text { color: #666; }
+  .progress-track {
+    height: 3px;
+    background: #1a1a1a;
+    margin-bottom: 1rem;
+    position: relative;
+    overflow: hidden;
+  }
+  .progress-bar {
+    height: 100%;
+    background: #e8e8e8;
+    width: 0%;
+    transition: width 0.3s;
+  }
+  .progress-indeterminate {
+    height: 100%;
+    background: #e8e8e8;
+    width: 30%;
+    animation: slide 1.2s infinite;
+  }
+  @keyframes slide {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(400%); }
+  }
+
+  #waiting-hint { font-size: 0.78rem; color: #555; margin-top: 0.5rem; }
+  #complete-msg { color: #55ff55; font-size: 0.85rem; margin-top: 0.5rem; display: none; }
+  #error-msg { color: #ff5555; font-size: 0.85rem; margin-top: 0.5rem; display: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>CHUCK</h1>
+  <nav>
+    <a href="/logout">Logout</a>
+  </nav>
+</header>
+
+<div class="container">
+  <!-- Step 1: Pick files -->
+  <div class="section">
+    <div class="label">Select files to send</div>
+    <div id="drop-zone">
+      <div class="drop-icon">⬆</div>
+      <div class="drop-text"><strong>Drop files here</strong> or use buttons below</div>
+    </div>
+    <div class="pick-btns">
+      <button class="btn" id="pick-files-btn">Pick Files</button>
+      <button class="btn" id="pick-folder-btn">Pick Folder</button>
+    </div>
+    <input type="file" id="file-input" multiple style="display:none">
+    <input type="file" id="folder-input" webkitdirectory style="display:none">
+    <div id="file-list"></div>
+    <button class="btn btn-primary" id="generate-btn" disabled>Generate Transfer Link</button>
+  </div>
+
+  <!-- Step 2: Link -->
+  <div id="link-section">
+    <div class="label">Transfer link</div>
+    <div class="link-box">
+      <input type="text" id="transfer-url" readonly>
+      <button id="copy-btn">Copy</button>
+    </div>
+  </div>
+
+  <!-- Step 3: Status -->
+  <div id="status-area">
+    <div class="status-row">
+      <span id="status-text">Waiting for receiver…</span>
+      <span id="speed-text"></span>
+    </div>
+    <div class="progress-track">
+      <div id="progress-bar" class="progress-bar"></div>
+    </div>
+    <p id="waiting-hint">Share the link above. Transfer will begin automatically when the recipient opens it.</p>
+    <p id="complete-msg">Transfer complete.</p>
+    <p id="error-msg"></p>
+  </div>
+</div>
+
+<script src="/static/jszip.min.js"></script>
+<script>
+(function() {
+  const CHUNK_SIZE = 4 * 1024 * 1024;
+
+  let selectedFiles = [];
+  let ws = null;
+  let roomToken = null;
+  let transferActive = false;
+
+  // Speed tracking
+  let bytesSent = 0;
+  let totalBytes = 0;
+  let lastSpeedBytes = 0;
+  let lastSpeedTime = 0;
+  let speedInterval = null;
+
+  const dropZone = document.getElementById('drop-zone');
+  const fileListEl = document.getElementById('file-list');
+  const generateBtn = document.getElementById('generate-btn');
+  const linkSection = document.getElementById('link-section');
+  const statusArea = document.getElementById('status-area');
+  const statusText = document.getElementById('status-text');
+  const speedText = document.getElementById('speed-text');
+  const progressBar = document.getElementById('progress-bar');
+  const waitingHint = document.getElementById('waiting-hint');
+  const completeMsg = document.getElementById('complete-msg');
+  const errorMsg = document.getElementById('error-msg');
+  const transferUrlInput = document.getElementById('transfer-url');
+  const copyBtn = document.getElementById('copy-btn');
+
+  // Drag & drop
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    handleFileList(e.dataTransfer.files);
+  });
+  dropZone.addEventListener('click', () => document.getElementById('file-input').click());
+
+  document.getElementById('pick-files-btn').addEventListener('click', e => {
+    e.stopPropagation();
+    document.getElementById('file-input').click();
+  });
+  document.getElementById('pick-folder-btn').addEventListener('click', e => {
+    e.stopPropagation();
+    document.getElementById('folder-input').click();
+  });
+  document.getElementById('file-input').addEventListener('change', e => handleFileList(e.target.files));
+  document.getElementById('folder-input').addEventListener('change', e => handleFileList(e.target.files));
+
+  function handleFileList(fileList) {
+    if (!fileList || fileList.length === 0) return;
+    selectedFiles = Array.from(fileList);
+    renderFileList();
+    generateBtn.disabled = false;
+    dropZone.classList.add('has-files');
+  }
+
+  function renderFileList() {
+    fileListEl.innerHTML = '';
+    selectedFiles.slice(0, 20).forEach(f => {
+      const div = document.createElement('div');
+      div.className = 'file-item';
+      div.innerHTML = `<span class="file-name">${escHtml(f.name)}</span><span class="file-size">${humanSize(f.size)}</span>`;
+      fileListEl.appendChild(div);
+    });
+    if (selectedFiles.length > 20) {
+      const div = document.createElement('div');
+      div.className = 'file-item';
+      div.style.color = '#555';
+      div.textContent = `…and ${selectedFiles.length - 20} more`;
+      fileListEl.appendChild(div);
+    }
+  }
+
+  // Copy button
+  copyBtn.addEventListener('click', () => {
+    navigator.clipboard.writeText(transferUrlInput.value).then(() => {
+      copyBtn.textContent = 'Copied!';
+      copyBtn.classList.add('copied');
+      setTimeout(() => { copyBtn.textContent = 'Copy'; copyBtn.classList.remove('copied'); }, 2000);
+    });
+  });
+
+  // Generate link
+  generateBtn.addEventListener('click', async () => {
+    if (selectedFiles.length === 0) return;
+    generateBtn.disabled = true;
+
+    try {
+      const res = await fetch('/dashboard/create-link', { method: 'POST' });
+      if (!res.ok) {
+        const txt = await res.text();
+        showError('Failed to create link: ' + txt);
+        generateBtn.disabled = false;
+        return;
+      }
+      const data = await res.json();
+      roomToken = data.token;
+      transferUrlInput.value = data.url;
+
+      linkSection.style.display = 'block';
+      statusArea.style.display = 'block';
+
+      connectSenderWS();
+    } catch (e) {
+      showError('Network error: ' + e.message);
+      generateBtn.disabled = false;
+    }
+  });
+
+  function connectSenderWS() {
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    const wsUrl = `${proto}://${location.host}/ws/dashboard/${roomToken}`;
+    ws = new WebSocket(wsUrl);
+    ws.binaryType = 'arraybuffer';
+
+    ws.onopen = () => {
+      setStatus('Waiting for receiver…');
+      showWaitingHint(true);
+    };
+
+    ws.onmessage = async (e) => {
+      if (typeof e.data !== 'string') return;
+      let msg;
+      try { msg = JSON.parse(e.data); } catch { return; }
+
+      if (msg.type === 'receiver_connected') {
+        showWaitingHint(false);
+        setStatus('Receiver connected. Preparing transfer…');
+        await startTransfer();
+      } else if (msg.type === 'receiver_disconnected') {
+        if (!transferActive) return;
+        showError('Receiver disconnected.');
+      } else if (msg.type === 'error') {
+        showError(msg.message || 'Unknown error');
+      }
+    };
+
+    ws.onclose = () => {
+      if (transferActive) {
+        stopSpeedInterval();
+      }
+    };
+    ws.onerror = () => showError('WebSocket error.');
+  }
+
+  async function startTransfer() {
+    transferActive = true;
+
+    let fileToSend;
+    let fileName;
+    let isZip = false;
+
+    if (selectedFiles.length === 1 && !selectedFiles[0].webkitRelativePath) {
+      fileToSend = selectedFiles[0];
+      fileName = fileToSend.name;
+    } else {
+      // Multiple files or folder — zip them
+      setStatus('Zipping files…');
+      showProgressIndeterminate();
+
+      try {
+        const { blob, name } = await zipFiles(selectedFiles);
+        fileToSend = blob;
+        fileName = name;
+        isZip = true;
+      } catch (e) {
+        showError('Failed to zip: ' + e.message);
+        return;
+      }
+    }
+
+    totalBytes = fileToSend.size;
+    bytesSent = 0;
+    lastSpeedBytes = 0;
+    lastSpeedTime = Date.now();
+
+    // Send metadata
+    ws.send(JSON.stringify({
+      type: 'metadata',
+      name: fileName,
+      size: totalBytes,
+      mime: isZip ? 'application/zip' : (fileToSend.type || 'application/octet-stream'),
+    }));
+
+    // Notify server we're ready
+    ws.send(JSON.stringify({ type: 'ready' }));
+
+    setStatus('Sending…');
+    startSpeedInterval();
+
+    // Chunked send
+    await sendFileChunked(fileToSend);
+
+    ws.send(JSON.stringify({ type: 'complete' }));
+    stopSpeedInterval();
+    setStatus('Complete');
+    progressBar.style.width = '100%';
+    completeMsg.style.display = 'block';
+    transferActive = false;
+  }
+
+  async function sendFileChunked(file) {
+    let offset = 0;
+    while (offset < file.size) {
+      const slice = file.slice(offset, offset + CHUNK_SIZE);
+      const buf = await slice.arrayBuffer();
+      // Wait for buffer to drain before sending next chunk
+      while (ws.bufferedAmount > 8 * 1024 * 1024) {
+        await sleep(50);
+      }
+      ws.send(buf);
+      offset += buf.byteLength;
+      bytesSent += buf.byteLength;
+      const pct = totalBytes > 0 ? (bytesSent / totalBytes) * 100 : 0;
+      progressBar.style.width = pct.toFixed(1) + '%';
+    }
+  }
+
+  async function zipFiles(files) {
+    const zip = new JSZip();
+    for (const f of files) {
+      const path = f.webkitRelativePath || f.name;
+      zip.file(path, f);
+    }
+    // Determine zip name
+    let zipName = 'transfer.zip';
+    if (files.length > 0 && files[0].webkitRelativePath) {
+      const parts = files[0].webkitRelativePath.split('/');
+      zipName = parts[0] + '.zip';
+    }
+    const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 3 } }, meta => {
+      setStatus(`Zipping… ${meta.percent.toFixed(0)}%`);
+    });
+    return { blob, name: zipName };
+  }
+
+  function startSpeedInterval() {
+    lastSpeedTime = Date.now();
+    lastSpeedBytes = bytesSent;
+    speedInterval = setInterval(() => {
+      const now = Date.now();
+      const elapsed = (now - lastSpeedTime) / 1000;
+      const delta = bytesSent - lastSpeedBytes;
+      const speed = elapsed > 0 ? delta / elapsed : 0;
+      speedText.textContent = humanSize(speed) + '/s';
+      lastSpeedTime = now;
+      lastSpeedBytes = bytesSent;
+    }, 1000);
+  }
+
+  function stopSpeedInterval() {
+    if (speedInterval) { clearInterval(speedInterval); speedInterval = null; }
+    speedText.textContent = '';
+  }
+
+  function showProgressIndeterminate() {
+    progressBar.style.width = '0%';
+    progressBar.classList.add('progress-indeterminate');
+  }
+
+  function setStatus(txt) { statusText.textContent = txt; }
+  function showWaitingHint(v) { waitingHint.style.display = v ? 'block' : 'none'; }
+  function showError(msg) {
+    errorMsg.textContent = msg;
+    errorMsg.style.display = 'block';
+    setStatus('Error');
+    transferActive = false;
+    stopSpeedInterval();
+  }
+
+  function humanSize(n) {
+    if (n < 1024) return n + ' B';
+    if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+    if (n < 1024 * 1024 * 1024) return (n / 1024 / 1024).toFixed(1) + ' MB';
+    return (n / 1024 / 1024 / 1024).toFixed(2) + ' GB';
+  }
+
+  function escHtml(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+})();
+</script>
+</body>
+</html>

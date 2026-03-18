@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chuck — Receive File</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0d0d0d;
+    color: #e8e8e8;
+    font-family: 'Courier New', Courier, monospace;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+  }
+  .card {
+    width: 100%;
+    max-width: 500px;
+  }
+  h1 { font-size: 1.2rem; letter-spacing: 0.2em; margin-bottom: 0.3rem; }
+  .tagline { color: #666; font-size: 0.78rem; margin-bottom: 2.5rem; }
+  .label { font-size: 0.72rem; color: #666; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.5rem; }
+
+  #state-waiting, #state-incoming, #state-receiving, #state-complete, #state-error {
+    display: none;
+  }
+  #state-waiting { display: block; }
+
+  .pulse {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    background: #e8e8e8;
+    border-radius: 50%;
+    margin-right: 0.6rem;
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.2; }
+  }
+
+  .status-line { display: flex; align-items: center; font-size: 0.9rem; margin-bottom: 1.5rem; }
+  .meta-table { margin-bottom: 1.5rem; }
+  .meta-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.35rem 0;
+    border-bottom: 1px solid #1a1a1a;
+    font-size: 0.82rem;
+  }
+  .meta-key { color: #666; }
+  .meta-val { color: #e8e8e8; }
+
+  .progress-track {
+    height: 3px;
+    background: #1a1a1a;
+    margin-bottom: 0.6rem;
+    overflow: hidden;
+  }
+  .progress-bar { height: 100%; background: #e8e8e8; width: 0%; transition: width 0.2s; }
+
+  .progress-stats {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.75rem;
+    color: #666;
+    margin-bottom: 1.5rem;
+  }
+
+  .complete-icon { font-size: 2rem; margin-bottom: 0.8rem; }
+  .complete-text { font-size: 0.9rem; color: #55ff55; margin-bottom: 0.5rem; }
+  .complete-sub { font-size: 0.78rem; color: #555; }
+
+  .error-text { color: #ff5555; font-size: 0.9rem; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>CHUCK</h1>
+  <p class="tagline">secure file transfer</p>
+
+  <div id="state-waiting">
+    <div class="status-line"><span class="pulse"></span>Waiting for sender…</div>
+    <p style="font-size:0.78rem;color:#555">The sender hasn't connected yet. Keep this page open.</p>
+  </div>
+
+  <div id="state-incoming">
+    <div class="label">Incoming transfer</div>
+    <div class="meta-table" id="meta-table"></div>
+    <div class="status-line"><span class="pulse"></span>Preparing to receive…</div>
+  </div>
+
+  <div id="state-receiving">
+    <div class="label">Receiving</div>
+    <div class="meta-table" id="meta-table-recv"></div>
+    <div class="progress-track">
+      <div class="progress-bar" id="recv-progress"></div>
+    </div>
+    <div class="progress-stats">
+      <span id="recv-bytes">0 B / 0 B</span>
+      <span id="recv-speed"></span>
+    </div>
+  </div>
+
+  <div id="state-complete">
+    <div class="complete-icon">✓</div>
+    <p class="complete-text">Download complete</p>
+    <p class="complete-sub" id="complete-filename"></p>
+  </div>
+
+  <div id="state-error">
+    <p class="error-text" id="error-detail">An error occurred.</p>
+  </div>
+</div>
+
+<script>
+(function() {
+  const TOKEN = '{{.Token}}';
+  let ws;
+  let chunks = [];
+  let totalSize = 0;
+  let receivedBytes = 0;
+  let fileName = 'download';
+  let fileMime = 'application/octet-stream';
+  let lastSpeedBytes = 0;
+  let lastSpeedTime = Date.now();
+  let speedInterval = null;
+
+  function setState(id) {
+    ['waiting','incoming','receiving','complete','error'].forEach(s => {
+      document.getElementById('state-' + s).style.display = s === id ? 'block' : 'none';
+    });
+  }
+
+  function humanSize(n) {
+    if (n < 1024) return n + ' B';
+    if (n < 1048576) return (n / 1024).toFixed(1) + ' KB';
+    if (n < 1073741824) return (n / 1048576).toFixed(1) + ' MB';
+    return (n / 1073741824).toFixed(2) + ' GB';
+  }
+
+  function connect() {
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    ws = new WebSocket(`${proto}://${location.host}/ws/transfer/${TOKEN}`);
+    ws.binaryType = 'arraybuffer';
+
+    ws.onopen = () => setState('waiting');
+
+    ws.onmessage = (e) => {
+      if (e.data instanceof ArrayBuffer) {
+        chunks.push(new Uint8Array(e.data));
+        receivedBytes += e.data.byteLength;
+        updateProgress();
+        if (totalSize > 0 && receivedBytes >= totalSize) {
+          finalizeDownload();
+        }
+        return;
+      }
+
+      let msg;
+      try { msg = JSON.parse(e.data); } catch { return; }
+
+      if (msg.type === 'metadata') {
+        fileName = msg.name || 'download';
+        totalSize = msg.size || 0;
+        fileMime = msg.mime || 'application/octet-stream';
+
+        // Populate meta table
+        document.getElementById('meta-table').innerHTML = metaRow('File', fileName) + metaRow('Size', humanSize(totalSize));
+        document.getElementById('meta-table-recv').innerHTML = metaRow('File', fileName) + metaRow('Size', humanSize(totalSize));
+        setState('incoming');
+      } else if (msg.type === 'ready') {
+        setState('receiving');
+        lastSpeedTime = Date.now();
+        lastSpeedBytes = 0;
+        speedInterval = setInterval(updateSpeed, 1000);
+      } else if (msg.type === 'complete') {
+        if (receivedBytes < totalSize) return; // wait for remaining binary
+        finalizeDownload();
+      } else if (msg.type === 'sender_disconnected') {
+        clearInterval(speedInterval);
+        if (receivedBytes < totalSize) {
+          showError('Sender disconnected before transfer completed.');
+        }
+      } else if (msg.type === 'error') {
+        showError(msg.message || 'Unknown error');
+      }
+    };
+
+    ws.onclose = () => {};
+    ws.onerror = () => showError('WebSocket error.');
+  }
+
+  function metaRow(k, v) {
+    return `<div class="meta-row"><span class="meta-key">${k}</span><span class="meta-val">${escHtml(String(v))}</span></div>`;
+  }
+
+  function updateProgress() {
+    if (totalSize === 0) return;
+    const pct = Math.min(100, (receivedBytes / totalSize) * 100);
+    document.getElementById('recv-progress').style.width = pct.toFixed(1) + '%';
+    document.getElementById('recv-bytes').textContent = humanSize(receivedBytes) + ' / ' + humanSize(totalSize);
+  }
+
+  function updateSpeed() {
+    const now = Date.now();
+    const elapsed = (now - lastSpeedTime) / 1000;
+    const delta = receivedBytes - lastSpeedBytes;
+    const speed = elapsed > 0 ? delta / elapsed : 0;
+    document.getElementById('recv-speed').textContent = humanSize(speed) + '/s';
+    lastSpeedTime = now;
+    lastSpeedBytes = receivedBytes;
+  }
+
+  function finalizeDownload() {
+    clearInterval(speedInterval);
+    const blob = new Blob(chunks, { type: fileMime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 2000);
+    setState('complete');
+    document.getElementById('complete-filename').textContent = fileName;
+    chunks = [];
+  }
+
+  function showError(msg) {
+    clearInterval(speedInterval);
+    document.getElementById('error-detail').textContent = msg;
+    setState('error');
+  }
+
+  function escHtml(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  connect();
+})();
+</script>
+</body>
+</html>

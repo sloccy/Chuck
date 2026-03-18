@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chuck — Login</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0d0d0d;
+    color: #e8e8e8;
+    font-family: 'Courier New', Courier, monospace;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .card {
+    width: 100%;
+    max-width: 380px;
+    padding: 2.5rem;
+    border: 1px solid #2a2a2a;
+    background: #141414;
+  }
+  h1 { font-size: 1.4rem; letter-spacing: 0.15em; margin-bottom: 0.4rem; }
+  .tagline { color: #666; font-size: 0.8rem; margin-bottom: 2rem; }
+  label { display: block; font-size: 0.75rem; color: #999; margin-bottom: 0.3rem; text-transform: uppercase; letter-spacing: 0.1em; }
+  input {
+    width: 100%;
+    background: #0d0d0d;
+    border: 1px solid #333;
+    color: #e8e8e8;
+    padding: 0.6rem 0.8rem;
+    font-family: inherit;
+    font-size: 0.9rem;
+    margin-bottom: 1.2rem;
+    outline: none;
+  }
+  input:focus { border-color: #e8e8e8; }
+  button {
+    width: 100%;
+    background: #e8e8e8;
+    color: #0d0d0d;
+    border: none;
+    padding: 0.7rem;
+    font-family: inherit;
+    font-size: 0.9rem;
+    font-weight: bold;
+    letter-spacing: 0.1em;
+    cursor: pointer;
+    text-transform: uppercase;
+  }
+  button:hover { background: #fff; }
+  .error { color: #ff5555; font-size: 0.82rem; margin-bottom: 1rem; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>CHUCK</h1>
+  <p class="tagline">secure file transfer</p>
+  {{.Error}}
+  <form method="POST" action="/login">
+    <label for="email">Email</label>
+    <input type="email" id="email" name="email" required autocomplete="username">
+    <label for="password">Password</label>
+    <input type="password" id="password" name="password" required autocomplete="current-password">
+    <button type="submit">Sign In</button>
+  </form>
+</div>
+</body>
+</html>

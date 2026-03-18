@@ -1,0 +1,18 @@
+services:
+  chuck:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - chuck_data:/data
+    environment:
+      PORT: "8080"
+      DATA_DIR: /data
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@localhost}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-changeme}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
+      MAX_CONCURRENT: ${MAX_CONCURRENT:-0}
+    restart: unless-stopped
+
+volumes:
+  chuck_data:

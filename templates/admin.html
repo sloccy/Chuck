@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chuck — Admin</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0d0d0d;
+    color: #e8e8e8;
+    font-family: 'Courier New', Courier, monospace;
+    min-height: 100vh;
+    padding: 2rem;
+  }
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2.5rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid #2a2a2a;
+  }
+  h1 { font-size: 1.2rem; letter-spacing: 0.2em; }
+  .badge { display: inline-block; background: #2a2a00; color: #ffcc00; font-size: 0.65rem; padding: 0.1rem 0.4rem; margin-left: 0.5rem; letter-spacing: 0.1em; vertical-align: middle; }
+  nav a { color: #666; text-decoration: none; font-size: 0.8rem; }
+  nav a:hover { color: #e8e8e8; }
+  .container { max-width: 640px; margin: 0 auto; }
+  .section { margin-bottom: 2.5rem; }
+  .section-title { font-size: 0.72rem; color: #666; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 1rem; padding-bottom: 0.4rem; border-bottom: 1px solid #1a1a1a; }
+
+  table { width: 100%; border-collapse: collapse; }
+  th { font-size: 0.7rem; color: #555; text-transform: uppercase; letter-spacing: 0.08em; text-align: left; padding: 0.4rem 0; border-bottom: 1px solid #1a1a1a; }
+  td { padding: 0.55rem 0; border-bottom: 1px solid #151515; font-size: 0.85rem; }
+  .no-users { color: #444; font-size: 0.82rem; padding: 1rem 0; }
+
+  .btn-delete {
+    background: transparent;
+    border: 1px solid #333;
+    color: #ff5555;
+    font-family: inherit;
+    font-size: 0.72rem;
+    padding: 0.2rem 0.6rem;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .btn-delete:hover { background: #1a0000; border-color: #ff5555; }
+
+  .add-form { display: flex; gap: 0.8rem; align-items: flex-end; flex-wrap: wrap; }
+  .field { display: flex; flex-direction: column; gap: 0.3rem; flex: 1; min-width: 150px; }
+  label { font-size: 0.7rem; color: #666; text-transform: uppercase; letter-spacing: 0.08em; }
+  input {
+    background: #0d0d0d;
+    border: 1px solid #333;
+    color: #e8e8e8;
+    padding: 0.5rem 0.7rem;
+    font-family: inherit;
+    font-size: 0.85rem;
+    outline: none;
+  }
+  input:focus { border-color: #e8e8e8; }
+  .btn-add {
+    background: #e8e8e8;
+    color: #0d0d0d;
+    border: none;
+    padding: 0.5rem 1.2rem;
+    font-family: inherit;
+    font-size: 0.8rem;
+    font-weight: bold;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .btn-add:hover { background: #fff; }
+  #msg { font-size: 0.8rem; margin-top: 0.8rem; min-height: 1.2em; }
+  .msg-ok { color: #55ff55; }
+  .msg-err { color: #ff5555; }
+</style>
+</head>
+<body>
+<header>
+  <h1>CHUCK <span class="badge">ADMIN</span></h1>
+  <nav><a href="/admin/login">Logout</a></nav>
+</header>
+
+<div class="container">
+  <div class="section">
+    <div class="section-title">Users</div>
+    <table id="users-table">
+      <thead><tr><th>Email</th><th></th></tr></thead>
+      <tbody id="users-tbody">
+        {{.UserRows}}
+      </tbody>
+    </table>
+    <div id="no-users-msg" style="display:none" class="no-users">No users yet.</div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Add User</div>
+    <form class="add-form" id="add-form">
+      <div class="field">
+        <label for="new-email">Email</label>
+        <input type="email" id="new-email" name="email" required placeholder="user@example.com">
+      </div>
+      <div class="field">
+        <label for="new-password">Password</label>
+        <input type="password" id="new-password" name="password" required placeholder="••••••••">
+      </div>
+      <button type="submit" class="btn-add">Add User</button>
+    </form>
+    <div id="msg"></div>
+  </div>
+</div>
+
+<script>
+(function() {
+  function checkEmpty() {
+    const rows = document.querySelectorAll('#users-tbody tr');
+    document.getElementById('no-users-msg').style.display = rows.length === 0 ? 'block' : 'none';
+  }
+  checkEmpty();
+
+  // Delete buttons
+  document.getElementById('users-tbody').addEventListener('click', async (e) => {
+    if (!e.target.classList.contains('btn-delete')) return;
+    const email = e.target.dataset.email;
+    if (!confirm(`Delete user ${email}?`)) return;
+    const res = await fetch(`/admin/users/${encodeURIComponent(email)}`, { method: 'DELETE' });
+    if (res.ok || res.status === 204) {
+      e.target.closest('tr').remove();
+      checkEmpty();
+    } else {
+      alert('Failed to delete user');
+    }
+  });
+
+  // Add form
+  document.getElementById('add-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = e.target;
+    const msg = document.getElementById('msg');
+    msg.textContent = '';
+    const body = new FormData(form);
+    const res = await fetch('/admin/users', { method: 'POST', body });
+    if (res.ok || res.redirected) {
+      // Reload to see new user
+      location.reload();
+    } else {
+      const txt = await res.text();
+      msg.textContent = txt || 'Error adding user';
+      msg.className = 'msg-err';
+    }
+  });
+})();
+</script>
+</body>
+</html>
